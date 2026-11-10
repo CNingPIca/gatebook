@@ -1,8 +1,6 @@
-"""Builds every part, defines assembly states (use / book / exploded), checks
-interference and exports print files + viewer meshes."""
-import json
+"""v1.1 — builds every part, defines assembly states (use / book / exploded),
+checks interference and provides transforms for export + viewer."""
 import math
-import os
 import time
 from collections import OrderedDict
 
@@ -12,10 +10,7 @@ import cadquery as cq
 from params import *
 import base as basemod
 import table as tablemod
-import clamp as clampmod
 import small
-
-OUT = os.path.join(os.path.dirname(__file__), "..", "out")
 
 
 # ---------------------------------------------------------------- transforms
@@ -32,11 +27,11 @@ def Rz(deg, cx=0, cy=0):
     return T(cx, cy) @ m @ T(-cx, -cy)
 
 
-def Rx(deg):
+def Rx(deg, cy=0, cz=0):
     a = math.radians(deg)
     m = np.eye(4)
     m[1, 1], m[1, 2], m[2, 1], m[2, 2] = math.cos(a), -math.sin(a), math.sin(a), math.cos(a)
-    return m
+    return T(0, cy, cz) @ m @ T(0, -cy, -cz)
 
 
 def Ry(deg):
@@ -54,47 +49,10 @@ def apply(shape, m):
     return shape.moved(cq.Location(tr))
 
 
-# ---------------------------------------------------------------- context (not printed)
-TUBE_W, TUBE_D = 24.0, 16.0          # a typical rectangular carry-on tube
-
-
-def tube_x():
-    half = V_MOUTH / 2
-    x_face = -CL_D + (half - TUBE_W / 2) / math.tan(math.radians(V_ANGLE / 2)) - 0.4
-    return x_face - TUBE_D, x_face
-
-
-GRIP_Z0 = 150.0
-SUITCASE_TOP = -300.0
-TUBE_GAP = 230.0                      # centre distance between the two tubes
-
-
-def build_context():
-    x0, x1 = tube_x()
-    ctx = OrderedDict()
-    yc = BASE_W / 2
-    tz0, tz1 = SUITCASE_TOP - 20, GRIP_Z0 + 22
-    tube = basemod.rbox(x0, yc - TUBE_W / 2, x1, yc + TUBE_W / 2, tz0, tz1, 3.0)
-    tube2 = tube.translate((0, -TUBE_GAP, 0))
-    ctx["tube"] = tube.union(tube2)
-    grip = (basemod.rbox(x0 - 6, yc - TUBE_GAP - 22, x1 + 6, yc + 22, GRIP_Z0, GRIP_Z0 + 32, 8.0)
-            .edges("not |Z").fillet(5.0))
-    ctx["grip"] = grip
-    sc = basemod.rbox(x0 - 6, yc - TUBE_GAP / 2 - 195, x0 + 230, yc - TUBE_GAP / 2 + 195, SUITCASE_TOP - 520, SUITCASE_TOP, 40.0)
-    sc = sc.faces(">Z").edges().fillet(25.0)
-    ctx["suitcase"] = sc
-    # two straps wrapped around clamp + tube (velcro / TPU band), in the strap channels
-    xc0 = x0 - 0.2
-    pts = [(-CH_DEPTH + 0.01, -CL_W / 2 + 3), (-CH_DEPTH + 0.01, CL_W / 2 - 3), (-CL_D + 2, CL_W / 2), (xc0 + 2, TUBE_W / 2),
-           (xc0, TUBE_W / 2 - 3), (xc0, -TUBE_W / 2 + 3), (xc0 + 2, -TUBE_W / 2), (-CL_D + 2, -CL_W / 2)]
-    bands = None
-    for z0, z1 in CH_Z:
-        outer = cq.Workplane("XY").polyline(pts).close().offset2D(1.8, "arc").extrude(STRAP_W - 0.4)
-        inner = cq.Workplane("XY").polyline(pts).close().extrude(STRAP_W + 2).translate((0, 0, -1))
-        b = outer.cut(inner).translate((0, yc, z0 + 1.0 + CLAMP_Z_OFF))
-        bands = b if bands is None else bands.union(b)
-    ctx["bands"] = bands
-    return ctx
+def panel_deploy(side):
+    """Folded -> deployed transform for the left (0) / right (1) side panel."""
+    hy = HINGE_Y if side == 0 else BASE_W - HINGE_Y
+    return Rx(DEPLOY_DEG if side == 0 else -DEPLOY_DEG, hy, HINGE_Z)
 
 
 # ---------------------------------------------------------------- parts
@@ -103,71 +61,131 @@ def build_parts():
     P = OrderedDict()
     P["base"] = basemod.build()
     P["table"] = tablemod.build()
-    P["clamp"] = clampmod.build()
+    P["panel_l"] = small.build_panel(0)
+    P["panel_r"] = small.build_panel(1)
+    P["hinge_pin"] = small.build_hinge_pin()
     for d in small.ring_dims():
         P[f"ring{d['k']}"] = small.build_ring(d)
     P["pin"] = small.build_pin()
-    P["hook_bag"] = small.build_hook("bag")
     P["hook_mini"] = small.build_hook("mini")
+    P["tube_hook"] = small.build_tube_hook()
     P["strap"] = small.build_strap()
+    P["buckle"] = small.build_buckle()
     print(f"parts built in {time.time() - t:.1f}s")
     return P
 
 
-RING_Z_BOOK = {2: 3.0, 3: 3.0, 4: 3.0}
-# extended: each ring's 45-deg lip cone sits on the parent's 45-deg seat
+def foot_z(P=None):
+    """Z of the luggage top = lowest point of the deployed TPU feet."""
+    tpu = small.build_panel(0)["tpu"].val()
+    return apply(tpu, panel_deploy(0)).BoundingBox().zmin
+
+
+# ---------------------------------------------------------------- context (not printed)
+TUBE_W, TUBE_D = 24.0, 16.0
+TUBE_CC = 230.0                       # tube centre distance of a typical carry-on
+GRIP_ABOVE_TOP = 420.0                # grip underside above the luggage top (handle fully extended)
+
+
+def build_context(z_top):
+    ctx = OrderedDict()
+    yc = BASE_W / 2
+    x1 = -0.6
+    x0 = x1 - TUBE_D
+    tubes = None
+    for s in (-1, 1):
+        ty = yc + s * TUBE_CC / 2
+        t = basemod.rbox(x0, ty - TUBE_W / 2, x1, ty + TUBE_W / 2, z_top - 30, z_top + GRIP_ABOVE_TOP + 20, 3.0)
+        tubes = t if tubes is None else tubes.union(t)
+    ctx["tube"] = tubes
+    gz = z_top + GRIP_ABOVE_TOP
+    ctx["grip"] = (basemod.rbox(x0 - 6, yc - TUBE_CC / 2 - 22, x1 + 6, yc + TUBE_CC / 2 + 22, gz, gz + 32, 8.0)
+                   .edges("not |Z").fillet(5.0))
+    sc = basemod.rbox(x0 - 8, yc - 195, x0 + 232, yc + 195, z_top - 550, z_top, 40.0)
+    sc = sc.faces(">Z").edges().fillet(25.0)
+    # the luggage's own top carry handle (centred): the arched panels clear it
+    th = (basemod.rbox(95, yc - 62, 120, yc + 62, z_top - 2, z_top + 18, 6.0).edges("not |Z").fillet(4.0)
+          .cut(basemod.rbox(90, yc - 50, 125, yc + 50, z_top - 3, z_top + 9, 0)))
+    ctx["suitcase"] = sc.union(th)
+    # tether straps: loop bar <-> tube (velcro or TPU), shown as bands
+    bands = None
+    for i, yb in enumerate(ANCHORS):
+        ty = yc + (-1 if i == 0 else 1) * TUBE_CC / 2
+        ya, yb2 = yb - BAR_W / 2 - WIN_W / 2, yb + BAR_W / 2 + WIN_W / 2
+        pts = [(BACK_WALL + 1.2, ya), (BACK_WALL + 1.2, yb2), (-1.0, yb2), (x0 - 0.3, ty + TUBE_W / 2),
+               (x0 - 0.3, ty - TUBE_W / 2), (-1.0, ya)]
+        hull = cq.Workplane("XY").polyline(pts).close()
+        outer = hull.offset2D(1.8, "arc").extrude(STRAP_W - 0.5)
+        inner = cq.Workplane("XY").polyline(pts).close().extrude(STRAP_W + 2).translate((0, 0, -1))
+        b = outer.cut(inner).translate((0, 0, WIN_Z[0] + 0.8))
+        bands = b if bands is None else bands.union(b)
+    ctx["bands"] = bands
+    return ctx
+
+
+# ---------------------------------------------------------------- states
 _DROP = CLR + (RING_H - RING_LIP_T - CUP_LIP)
 RING_Z_USE = {2: CUP_LIP_T - _DROP}
 RING_Z_USE[3] = RING_Z_USE[2] + RING_LIP_T - _DROP
 RING_Z_USE[4] = RING_Z_USE[3] + RING_LIP_T - _DROP
+RING_Z_BOOK = {2: 3.0, 3: 3.0, 4: 3.0}
 
 
-def states(table_deg=90.0):
+def states(table_deg=180.0):
     cx, cy = CUP_C
-    pa = PIVOTS[0]
     S = OrderedDict()
+    pin_l = np.eye(4)
+    pin_r = T(0, BASE_W - 2 * HINGE_Y, 0)
+
     use = OrderedDict()
     use["base"] = [np.eye(4)]
-    use["table"] = [Rz(table_deg, *pa)]
-    use["clamp"] = [T(0, BASE_W / 2, CLAMP_Z_OFF)]
+    use["table"] = [Rz(table_deg, *PIVOT)]
+    use["panel_l"] = [panel_deploy(0)]
+    use["panel_r"] = [panel_deploy(1)]
+    use["hinge_pin"] = [pin_l, pin_r]
     for k in (2, 3, 4):
         use[f"ring{k}"] = [T(cx, cy, RING_Z_USE[k])]
-    use["pin"] = [T(*pa, 0)]
+    use["pin"] = [T(*PIVOT, 0)]
     hx, hy = HOOK_SOCKETS[0]
-    hx2, hy2 = HOOK_SOCKETS[1]
-    use["hook_bag"] = [T(hx, hy) @ Rz(-90)]
-    use["hook_mini"] = [T(hx2, hy2) @ Rz(90)]
+    use["hook_mini"] = [T(hx, hy) @ Rz(90)]
+    # tube hook strapped to the left tube, back face on the tube's outer side
+    z_top = foot_z()
+    ty = BASE_W / 2 - TUBE_CC / 2
+    use["tube_hook"] = [T(-0.6 - TUBE_D - 0.8, ty, z_top + 150) @ Rz(180)]
     use["strap"] = []
+    use["buckle"] = []
     S["use"] = use
 
     book = OrderedDict()
     book["base"] = [np.eye(4)]
     book["table"] = [np.eye(4)]
-    # clamp lies on its back in the bay: clamp X->Z, Y->X, Z->Y
-    Rc = np.array([[0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, 0], [0, 0, 0, 1]], dtype=float)
-    book["clamp"] = [T(BAY_X0 + 2.0 + CL_W / 2 + PEG_LEN - 1.0, MID[0] + 5.0, FLOOR + CL_D + 0.05) @ Rc]
+    book["panel_l"] = [np.eye(4)]
+    book["panel_r"] = [np.eye(4)]
+    book["hinge_pin"] = [pin_l, pin_r]
     for k in (2, 3, 4):
         book[f"ring{k}"] = [T(cx, cy, RING_Z_BOOK[k])]
-    book["pin"] = [T(*pa, 0)]
-    # hooks stored lying flat inside the collapsed cup (on the R4 floor)
+    book["pin"] = [T(*PIVOT, 0)]
     floor_top = RING_Z_BOOK[4] + RING_LIP_T
-    book["hook_bag"] = [T(cx - 8.5, cy - 18.9, floor_top + 2.3 + 0.1) @ Rx(90)]
-    book["hook_mini"] = [T(cx, cy - 8.1, floor_top + 6.0 + 2.3 + 0.3) @ Rx(90)]
-    # two straps flat in the long channel
-    book["strap"] = [T(BIN_X1 - 4 - STRAP_L, (CH_A[0] + CH_A[1]) / 2, FLOOR + 0.05),
-                     T(BIN_X1 - 4 - STRAP_L, (CH_A[0] + CH_A[1]) / 2, FLOOR + STRAP_T + 0.1)]
+    book["hook_mini"] = [T(cx, cy - 8.1, floor_top + 2.3 + 0.2) @ Rx(90)]
+    # big bin (X 30..120, Y 12..103): tube hook flat, two straps rolled flat, two buckles
+    book["tube_hook"] = [T(76, 27, FLOOR + 0.85) @ Ry(-90)]
+    book["strap"] = []          # rolled up in the big bin (not drawn)
+    book["buckle"] = [T(45, 84, FLOOR + 0.05), T(75, 84, FLOOR + 0.05)]
     S["book"] = book
 
     ex = OrderedDict()
     ex["base"] = [np.eye(4)]
     ex["table"] = [T(0, 0, 70)]
-    ex["clamp"] = [T(-70, BASE_W / 2, CLAMP_Z_OFF)]
+    ex["panel_l"] = [T(0, -40, -60) @ panel_deploy(0)]
+    ex["panel_r"] = [T(0, 40, -60) @ panel_deploy(1)]
+    ex["hinge_pin"] = [T(-90, 0, 0) @ pin_l, T(-90, 0, 0) @ pin_r]
     for i, k in enumerate((2, 3, 4)):
         ex[f"ring{k}"] = [T(cx, cy, -40 - 32 * i)]
-    ex["pin"] = [T(*pa, 120)]
-    ex["hook_bag"] = [T(hx, hy, -45) @ Rz(-90)]
-    ex["hook_mini"] = [T(hx2, hy2, -45) @ Rz(90)]
-    ex["strap"] = [T(-150, BASE_W / 2 - 40, -60) @ Rz(90), T(-125, BASE_W / 2 - 40, -60) @ Rz(90)]
+    ex["pin"] = [T(*PIVOT, 120)]
+    ex["hook_mini"] = [T(hx, hy, -45) @ Rz(90)]
+    ex["tube_hook"] = [T(-120, BASE_W / 2, -40)]
+    ex["strap"] = [T(-60, 20, -110) @ Rz(90), T(-60, 190, -110) @ Rz(90)]
+    ex["buckle"] = [T(-60, 60, -100), T(-60, 150, -100)]
     S["exploded"] = ex
     return S
 
@@ -180,18 +198,16 @@ def placed(P, state, name):
     return out
 
 
-def interference(P, S, ctx=None, pairs=None, tol=1.0):
-    """Report intersection volume (mm^3) between parts in each state."""
+def interference(P, S, ctx=None, tol=1.0, only=("use", "book")):
     rep = {}
-    for sname in ("use", "book"):
+    for sname in only:
         st = S[sname]
-        names = [n for n in st if st[n]]
         shp = {}
-        for n in names:
+        for n in st:
             for mat, sh in placed(P, st, n):
                 shp.setdefault(f"{n}:{mat}", []).append(sh)
         if sname == "use" and ctx is not None:
-            for k in ("tube", "grip"):
+            for k in ("tube", "suitcase"):
                 shp["ctx_" + k + ":ctx"] = [ctx[k].val()]
         keys = list(shp)
         res = []
@@ -203,9 +219,9 @@ def interference(P, S, ctx=None, pairs=None, tol=1.0):
                 v = 0.0
                 for sa in shp[a]:
                     for sb in shp[b]:
-                        bb1, bb2 = sa.BoundingBox(), sb.BoundingBox()
-                        if (bb1.xmax < bb2.xmin or bb2.xmax < bb1.xmin or bb1.ymax < bb2.ymin or bb2.ymax < bb1.ymin
-                                or bb1.zmax < bb2.zmin or bb2.zmax < bb1.zmin):
+                        b1, b2 = sa.BoundingBox(), sb.BoundingBox()
+                        if (b1.xmax < b2.xmin or b2.xmax < b1.xmin or b1.ymax < b2.ymin or b2.ymax < b1.ymin
+                                or b1.zmax < b2.zmin or b2.zmax < b1.zmin):
                             continue
                         try:
                             v += sa.intersect(sb).Volume()
@@ -219,7 +235,9 @@ def interference(P, S, ctx=None, pairs=None, tol=1.0):
 
 if __name__ == "__main__":
     P = build_parts()
-    ctx = build_context()
+    zt = foot_z()
+    print("luggage top (feet) z =", round(zt, 2))
+    ctx = build_context(zt)
     S = states()
     t = time.time()
     rep = interference(P, S, ctx)

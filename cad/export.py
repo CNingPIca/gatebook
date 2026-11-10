@@ -22,31 +22,39 @@ VIEW = os.path.join(OUT, "viewer")
 PRINT_ORIENT = {
     "base": np.eye(4),
     "table": A.T(0, 0, -BASE_H),
-    "clamp": np.eye(4),
+    "panel_l": A.T(0, 0, PANEL_T),
+    "panel_r": A.T(0, 0, PANEL_T),
+    "hinge_pin": A.Rx(0),                      # D-flat already at the bottom
     "ring2": np.eye(4), "ring3": np.eye(4), "ring4": np.eye(4),
     "pin": A.T(0, 0, 4.6) @ A.Ry(-90),
-    "hook_bag": A.T(0, 0, 2.3) @ A.Rx(90),
     "hook_mini": A.T(0, 0, 2.3) @ A.Rx(90),
+    "tube_hook": A.Ry(-90),                    # back face (with TPU pad) on the bed
     "strap": np.eye(4),
+    "buckle": np.eye(4),
 }
 PART_INFO = {
     "base": ("01_base_收纳主体", 1),
     "table": ("02_table_旋转桌板", 1),
-    "clamp": ("03_qmount_拉杆夹", 1),
-    "ring2": ("04_cup_ring_A_杯架套环A", 1),
-    "ring3": ("05_cup_ring_B_杯架套环B", 1),
-    "ring4": ("06_cup_ring_C_杯架底环C", 1),
-    "pin": ("07_pivot_pin_销轴", 2),
-    "hook_bag": ("08_hook_bag_大挂钩", 1),
-    "hook_mini": ("09_hook_mini_小双钩", 1),
-    "strap": ("10_strap_TPU表带", 2),
+    "panel_l": ("03_panel_L_左侧板腿", 1),
+    "panel_r": ("04_panel_R_右侧板腿", 1),
+    "hinge_pin": ("05_hinge_pin_铰链销", 2),
+    "ring2": ("06_cup_ring_A_杯架套环A", 1),
+    "ring3": ("07_cup_ring_B_杯架套环B", 1),
+    "ring4": ("08_cup_ring_C_杯架底环C", 1),
+    "pin": ("09_pivot_pin_桌板销轴", 1),
+    "hook_mini": ("10_hook_mini_小双钩", 1),
+    "tube_hook": ("11_tube_hook_拉杆挂钩", 1),
+    "strap": ("12_strap_TPU系留带", 2),
+    "buckle": ("13_buckle_带扣", 2),
 }
-# plates for the H3C (330 x 320): positions of the part's bbox min corner
+# plates for the H3C (330 x 320): bbox-min corner of each part on the bed
 PLATES = {
-    "plate_A_base_table": [("base", (60, 6)), ("table", (60, 164))],
-    "plate_B_small_parts": [("clamp", (20, 20)), ("ring2", (95, 10)), ("ring3", (190, 10)), ("ring4", (95, 105)),
-                            ("pin", (20, 120)), ("pin", (20, 160)), ("hook_bag", (180, 105)), ("hook_mini", (240, 105)),
-                            ("strap", (20, 200)), ("strap", (20, 240))],
+    "plate_A_base_table": [("base", (6, 6)), ("table", (164, 6))],
+    "plate_B_legs_small": [("panel_l", (6, 6)), ("panel_r", (6, 112)), ("hinge_pin", (6, 222)), ("hinge_pin", (6, 236)),
+                           ("ring2", (160, 6)), ("ring3", (160, 100)), ("ring4", (250, 100)),
+                           ("pin", (252, 6)), ("hook_mini", (252, 30)), ("tube_hook", (160, 186)),
+                           ("buckle", (250, 186)), ("buckle", (280, 186))],
+    "plate_C_TPU_straps": [("strap", (10, 10)), ("strap", (10, 40))],
 }
 
 
@@ -107,7 +115,7 @@ def main(view_only=False):
     for d in (PRINT, STEP, VIEW):
         os.makedirs(d, exist_ok=True)
     P = A.build_parts()
-    ctx = A.build_context()
+    ctx = A.build_context(A.foot_z())
     S = A.states()
 
     if not view_only:
@@ -166,9 +174,9 @@ def main(view_only=False):
     scene.export(os.path.join(VIEW, "gatebook.glb"))
     st = {s: {n: [np.round(m, 6).tolist() for m in ms] for n, ms in d.items()} for s, d in S.items()}
     # extra states for the animation: table angles
-    for ang in (0, 45, 90, 135, 180):
-        st[f"table_{ang}"] = [np.round(A.Rz(ang, *PIVOTS[0]), 6).tolist()]
-    st["meta"] = {"version": VERSION, "pivot": PIVOTS[0], "cup": CUP_C}
+    st["meta"] = {"version": VERSION, "pivot": PIVOT, "cup": CUP_C, "z_top": A.foot_z(),
+                  "panel_l_deployed": np.round(A.panel_deploy(0), 6).tolist(),
+                  "panel_r_deployed": np.round(A.panel_deploy(1), 6).tolist()}
     json.dump(st, open(os.path.join(VIEW, "states.json"), "w"))
     print("glb", os.path.getsize(os.path.join(VIEW, "gatebook.glb")) // 1024, "KB")
 

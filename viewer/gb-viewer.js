@@ -5,9 +5,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 export const PART_LABELS = {
-  base: '收纳主体（书页）', table: '旋转桌板（书封）', clamp: 'Q-Mount 拉杆夹',
-  ring2: '杯架套环 A', ring3: '杯架套环 B', ring4: '杯架底环 C', pin: '销轴（卡扣式）',
-  hook_bag: '大挂钩', hook_mini: '小双钩', strap: 'TPU 弹力表带',
+  base: '收纳主体（书页）', table: '旋转桌板（书封）', panel_l: '左侧板腿（封底·左）', panel_r: '右侧板腿（封底·右）',
+  hinge_pin: '铰链销（直销，无螺纹）', ring2: '杯架套环 A', ring3: '杯架套环 B', ring4: '杯架底环 C',
+  pin: '桌板销轴（卡扣式）', hook_mini: '小双钩', tube_hook: '拉杆挂钩', strap: 'TPU 系留带', buckle: '带扣',
 };
 
 const PALETTE = {
@@ -15,8 +15,8 @@ const PALETTE = {
   alu: 0xb9bec6, shell: 0x5d6873, rubber: 0x1d1f22, band: 0x30343a,
 };
 const PART_COLOR = {
-  base: 'paper', table: 'graphite', clamp: 'graphite', ring2: 'paper', ring3: 'paper', ring4: 'paper',
-  pin: 'graphite', hook_bag: 'graphite', hook_mini: 'graphite',
+  base: 'paper', table: 'graphite', panel_l: 'graphite', panel_r: 'graphite', hinge_pin: 'graphite',
+  ring2: 'paper', ring3: 'paper', ring4: 'paper', pin: 'graphite', hook_mini: 'graphite', tube_hook: 'graphite', buckle: 'graphite',
 };
 
 function mat4(rows) {
@@ -118,6 +118,7 @@ export async function createViewer(container, opts) {
   const ctx = new THREE.Group();
   root.add(ctx);
   for (const k of ['tube', 'grip', 'suitcase', 'bands']) {
+    if (!geoms[`ctx__${k}`]) continue;
     const m = new THREE.Mesh(geoms[`ctx__${k}`], ctxMat[k]);
     m.castShadow = k !== 'suitcase'; m.receiveShadow = true;
     if (k === 'bands') m.userData.mountOnly = true;
@@ -152,14 +153,14 @@ export async function createViewer(container, opts) {
     const screenMat = new THREE.MeshStandardMaterial({ color: 0x23466b, roughness: 0.15, emissive: 0x0d2238, emissiveIntensity: 0.6 });
     const phone = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(8.5, 74, 152), phoneMat);
-    const scr = new THREE.Mesh(new THREE.PlaneGeometry(70, 146), screenMat);
-    scr.rotation.y = -Math.PI / 2; scr.rotation.z = Math.PI / 2; scr.position.x = -4.3;
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(146, 70), screenMat);
+    scr.rotation.y = Math.PI / 2; scr.position.x = 4.3;
     const bump = new THREE.Mesh(new THREE.BoxGeometry(2, 26, 26), phoneMat);
-    bump.position.set(5, 18, 52);
+    bump.position.set(-5, 18, 52);
     phone.add(body, scr, bump);
-    phone.rotation.y = THREE.MathUtils.degToRad(15);
     const lean = THREE.MathUtils.degToRad(15);
-    phone.position.set(190.2 + 76 * Math.sin(lean), 74, 6.8 + 76 * Math.cos(lean));
+    phone.rotation.y = -lean;
+    phone.position.set(23.9 - 76 * Math.sin(lean), 105, 6.6 + 76 * Math.cos(lean));
     phone.traverse(o => { if (o.isMesh) o.castShadow = true; });
     phone.userData.prop = 'phone';
     props.add(phone);
@@ -180,14 +181,15 @@ export async function createViewer(container, opts) {
   const pass = new THREE.Mesh(new THREE.BoxGeometry(203, 82, 0.3),
     [0, 0, 0, 0, 1, 1].map(i => i ? new THREE.MeshStandardMaterial({ map: passTex, roughness: 0.6 }) : new THREE.MeshStandardMaterial({ color: 0xf6f5f2 })));
   // sleeve: X 24..211.5, Y 30..118, z 26.4..28.6 ; pass pushed in, 10 mm proud
-  pass.position.set(24.5 + 101.5, 74, 27.4);
+  pass.rotation.z = Math.PI / 2;
+  pass.position.set(74, 24.5 + 101.5 + 1, 27.4);
   pass.userData.prop = 'pass';
   parts.table.instances[0].add(pass);
 
   // ---------- state handling ----------
   const cur = {};   // part -> [ {p,q,s,visible} ]
   let target = null, from = null, t0 = 0, dur = 0;
-  let tableDeg = 90, cupExtended = true, stateName = 'use';
+  let tableDeg = 180, cupExtended = true, stateName = 'use';
 
   function decompose(m) {
     const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
@@ -237,10 +239,10 @@ export async function createViewer(container, opts) {
     props.visible = showProps && name === 'use' && cupExtended;
     pass.visible = showProps && name !== 'exploded';
     if (!animate) { applyGoal(g); target = null; return; }
-    from = snapshot(); target = g; t0 = performance.now(); dur = 900;
+    from = snapshot(); target = g; t0 = performance.now(); dur = animMs;
     for (const n of partNames) parts[n].instances.forEach((grp, i) => { if (!g[n][i].hidden) grp.visible = true; });
   }
-  let showContext = true, showProps = true;
+  let showContext = true, showProps = true, animMs = 900;
 
   function step(now) {
     if (!target) return;
@@ -258,18 +260,20 @@ export async function createViewer(container, opts) {
   const tmpBox = new THREE.Box3();
   function frame(view = 'hero', instant = false) {
     const V = {
-      hero: { pos: [620, -720, 430], tgt: [60, -50, -40] },
-      user: { pos: [-650, -520, 560], tgt: [90, -40, -20] },
-      wide: { pos: [-900, -1300, 650], tgt: [40, -100, -250] },
-      book: { pos: [-260, -330, 330], tgt: [105, 74, 10] },
-      exploded: { pos: [-430, -560, 420], tgt: [70, 50, -10] },
-      mount: { pos: [-260, -170, 140], tgt: [-10, 74, 20] },
-      pass: { pos: [380, -120, 230], tgt: [190, 30, 25] },
-      top: { pos: [100, -60, 900], tgt: [100, -40, 0] },
+      hero: { pos: [760, 560, 330], tgt: [95, 95, -70] },
+      user: { pos: [720, 105, 230], tgt: [70, 105, -10] },
+      wide: { pos: [1150, 900, 520], tgt: [80, 100, -250] },
+      book: { pos: [430, 360, 330], tgt: [74, 105, 8] },
+      exploded: { pos: [560, 520, 380], tgt: [40, 105, -30] },
+      legs: { pos: [150, -420, -40], tgt: [74, 20, -45] },
+      tether: { pos: [-330, -150, 260], tgt: [-5, 30, 5] },
+      pass: { pos: [420, -230, 230], tgt: [200, 10, 25] },
+      top: { pos: [140, 105, 900], tgt: [140, 105, 0] },
     }[view];
     const toW = v => new THREE.Vector3(v[0], v[2], -v[1]);
     const p = toW(V.pos), t = toW(V.tgt);
     if (instant) { camera.position.copy(p); controls.target.copy(t); controls.update(); return; }
+    if (animMs < 50) { camera.position.copy(p); controls.target.copy(t); controls.update(); return; }
     camAnim = { p0: camera.position.clone(), p1: p, t0v: controls.target.clone(), t1: t, s: performance.now() };
   }
   let camAnim = null;
@@ -283,7 +287,7 @@ export async function createViewer(container, opts) {
 
   function placeGround() {
     // ground under the suitcase (use state) or under the book
-    ground.position.y = stateName === 'use' && showContext ? -820 : (stateName === 'exploded' ? -140 : -0.5);
+    ground.position.y = stateName === 'use' ? (showContext ? meta.z_top - 550 : meta.z_top - 0.2) : (stateName === 'exploded' ? -150 : -6.5);
     key.target.position.set(0, ground.position.y, 0);
   }
 
@@ -335,8 +339,9 @@ export async function createViewer(container, opts) {
   return {
     THREE, renderer, scene, camera, controls,
     setState, frame, highlight,
-    setTableAngle(d) { tableDeg = d; if (stateName === 'use') setState('use', true); },
+    setTableAngle(d, animate = true) { tableDeg = d; if (stateName === 'use') setState('use', animate); },
     setCup(ext) { cupExtended = ext; if (stateName === 'use') setState('use', true); },
+    setDuration(ms) { animMs = ms; },
     setContext(v) { showContext = v; ctx.visible = v && stateName === 'use'; },
     setProps(v) { showProps = v; props.visible = v && stateName === 'use' && cupExtended; pass.visible = v && stateName !== 'exploded'; },
     onPick(fn) { onPick = fn; },

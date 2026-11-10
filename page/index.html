@@ -1,0 +1,800 @@
+<title>GateBook 候机书</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+/* Layout: a departure-board header band, then one wide 3D stage, then signage-style sections on a cool page grey.
+   Accent = airport wayfinding yellow, used as a fill (never as small text on light). */
+:root {
+  --bg: #eceff2; --surface: #ffffff; --ink: #1d2025; --ink-2: #545b66; --line: #d3d8de;
+  --signal: #f2b705; --signal-ink: #1d2025; --accent-ink: #7a5d00;
+  --board: #1f2227; --board-ink: #f2c230; --board-ink-2: #b9bec7;
+  --stage: #dfe3e8; --ok: #1d7a4b; --bad: #b3261e; --warn: #9a6400;
+  --f-display: "Barlow Condensed", "DIN Condensed", "Arial Narrow", "Noto Sans SC", sans-serif;
+  --f-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15171b; --surface: #1d2025; --ink: #eceef1; --ink-2: #a5acb7; --line: #2e333a;
+  --signal: #f2b705; --signal-ink: #15171b; --accent-ink: #f2c230;
+  --board: #0f1114; --board-ink: #f2c230; --board-ink-2: #9aa1ab;
+  --stage: #1b1e23; --ok: #4cc38a; --bad: #ff7468; --warn: #f2c230; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #15171b; --surface: #1d2025; --ink: #eceef1; --ink-2: #a5acb7; --line: #2e333a;
+  --signal: #f2b705; --signal-ink: #15171b; --accent-ink: #f2c230;
+  --board: #0f1114; --board-ink: #f2c230; --board-ink-2: #9aa1ab;
+  --stage: #1b1e23; --ok: #4cc38a; --bad: #ff7468; --warn: #f2c230; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.7; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--board); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; letter-spacing: .01em; line-height: 1.15; text-wrap: balance; margin: 0; }
+h2 { font-size: clamp(28px, 4vw, 40px); }
+h3 { font-size: 22px; }
+p { margin: 0; max-width: 68ch; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.eyebrow { font-family: var(--f-display); font-weight: 600; font-size: 15px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
+
+/* ---------- departure board ---------- */
+.board { background: var(--board); color: var(--board-ink-2); }
+.board .wrap { padding-block: 22px 26px; display: grid; gap: 14px; }
+.board-row { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: baseline; font-family: var(--f-mono); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }
+.board-row b { color: var(--board-ink); font-weight: 500; }
+.board h1 { color: var(--board-ink); font-size: clamp(44px, 8vw, 88px); font-weight: 700; letter-spacing: .02em; }
+.board h1 span { color: #f4f5f7; font-family: var(--f-body); font-weight: 700; font-size: .62em; margin-left: .25em; letter-spacing: .08em; }
+.board .lede { color: #e3e6ea; font-size: 17px; max-width: 60ch; }
+.flap { display: inline-flex; gap: 3px; }
+.flap i { font-style: normal; background: #2a2e35; color: var(--board-ink); padding: 1px 5px; border-radius: 2px; font-family: var(--f-mono); }
+
+/* ---------- 3D stage ---------- */
+.stage-sec { padding-block: 22px 8px; }
+.stage { position: relative; border-radius: 14px; overflow: hidden; background: radial-gradient(120% 90% at 60% 30%, var(--surface), var(--stage)); border: 1px solid var(--line); aspect-ratio: 16 / 9; max-width: 100%; }
+.stage img.poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .5s; }
+.stage .canvas { position: absolute; inset: 0; opacity: 0; transition: opacity .5s; touch-action: none; }
+.stage.live .canvas { opacity: 1; }
+.stage.live img.poster { opacity: 0; pointer-events: none; }
+.stage .status { position: absolute; left: 12px; bottom: 12px; font-family: var(--f-mono); font-size: 12px; color: var(--ink-2); background: color-mix(in srgb, var(--surface) 82%, transparent); padding: 4px 10px; border-radius: 6px; }
+.pick { position: absolute; right: 12px; top: 12px; width: min(300px, calc(100% - 24px)); background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--signal); border-radius: 8px; padding: 12px 14px; font-size: 13px; line-height: 1.6; box-shadow: 0 6px 24px rgba(0,0,0,.12); }
+.pick h4 { margin: 0 0 4px; font-family: var(--f-display); font-size: 19px; font-weight: 600; }
+.pick .k { color: var(--ink-2); }
+.controls { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); padding-block: 14px 4px; }
+.ctl { display: grid; gap: 6px; min-width: 0; }
+.ctl label, .ctl .lab { font-family: var(--f-display); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; font-size: 13px; color: var(--ink-2); }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+button.chip { font: 500 14px/1 var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+button.chip:hover { border-color: var(--ink-2); }
+button.chip[aria-pressed="true"] { background: var(--signal); color: var(--signal-ink); border-color: var(--signal); font-weight: 700; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+.range { display: flex; align-items: center; gap: 10px; }
+.range input { flex: 1; min-width: 0; accent-color: var(--signal); }
+.range output { font-family: var(--f-mono); min-width: 4ch; text-align: right; }
+.hint { font-size: 13px; color: var(--ink-2); }
+
+/* ---------- spec strip ---------- */
+.specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-block: 18px 6px; }
+.spec { background: var(--surface); padding: 14px 16px; display: grid; gap: 2px; }
+.spec .v { font-family: var(--f-display); font-size: 28px; font-weight: 600; line-height: 1.1; }
+.spec .v small { font-family: var(--f-mono); font-size: 13px; font-weight: 400; color: var(--ink-2); margin-left: 4px; }
+.spec .l { font-size: 13px; color: var(--ink-2); }
+
+/* ---------- sections ---------- */
+section.block { padding-block: 44px 8px; display: grid; gap: 18px; }
+.sign { display: inline-flex; align-items: center; gap: 10px; }
+.sign .arrow { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 6px; background: var(--signal); color: var(--signal-ink); font-family: var(--f-display); font-weight: 700; font-size: 20px; }
+
+.verdict { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 760px) { .verdict { grid-template-columns: 1fr; } }
+.vcard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 10px; align-content: start; }
+.vcard h3 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pill { font: 600 12px/1 var(--f-mono); padding: 5px 8px; border-radius: 999px; letter-spacing: .04em; white-space: nowrap; }
+.pill.fail { color: var(--bad); border: 1px solid currentColor; }
+.pill.pass { color: var(--ok); border: 1px solid currentColor; }
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--f-display); font-weight: 600; letter-spacing: .06em; font-size: 14px; color: var(--ink-2); background: color-mix(in srgb, var(--bg) 60%, var(--surface)); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sf { font-family: var(--f-mono); font-weight: 500; }
+.sf.ok { color: var(--ok); } .sf.bad { color: var(--bad); } .sf.mid { color: var(--warn); }
+
+figure.diagram { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; overflow-x: auto; }
+figure.diagram svg { display: block; width: 100%; min-width: 560px; height: auto; }
+figure.diagram figcaption { font-size: 13px; color: var(--ink-2); margin-top: 6px; }
+
+.feat { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.f { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.f h3 { font-size: 21px; }
+.f .dim { font-family: var(--f-mono); font-size: 12.5px; color: var(--accent-ink); }
+.f p { font-size: 14px; color: var(--ink-2); }
+
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.gallery figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.gallery img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: #fff; }
+.gallery figcaption { padding: 8px 12px; font-size: 13px; color: var(--ink-2); }
+.gallery figure.wide { grid-column: 1 / -1; }
+.gallery figure.wide img { aspect-ratio: auto; }
+
+ol.steps { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; gap: 10px; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+ol.steps li::before { content: counter(s); display: grid; place-items: center; width: 34px; height: 34px; border-radius: 6px; background: var(--board); color: var(--board-ink); font-family: var(--f-display); font-weight: 700; font-size: 20px; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+.note { border-left: 4px solid var(--signal); background: var(--surface); padding: 12px 14px; border-radius: 0 8px 8px 0; font-size: 14px; }
+.note b { font-weight: 700; }
+code { font-family: var(--f-mono); font-size: .9em; background: color-mix(in srgb, var(--bg) 70%, var(--surface)); padding: 1px 5px; border-radius: 4px; }
+footer { padding-block: 40px 56px; color: var(--ink-2); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 5; } .pick { top: auto; bottom: 44px; } .specs { grid-template-columns: 1fr 1fr; } .spec:last-child { grid-column: 1 / -1; } }
+</style>
+
+<header class="board">
+  <div class="wrap">
+    <div class="board-row"><span>FLIGHT <b>GB 1.1</b></span><span>GATE <b>候机口</b></span><span>STATUS <b>READY TO PRINT</b></span><span class="flap"><i>A</i><i>5</i></span></div>
+    <h1>GATEBOOK<span>候机书</span></h1>
+    <p class="lede">一本 A5 大小的"书"，在候机口立到行李箱顶上，展开成带杯架、手机槽、登机牌夹层的小桌子。全部可用拓竹 H3C 打印，PETG + TPU，零螺丝。</p>
+  </div>
+</header>
+
+<main>
+<section class="stage-sec" id="viewer">
+  <div class="wrap">
+    <div class="stage" id="stage">
+      <img class="poster" src="img/hero.webp" alt="GateBook 展开立在行李箱顶上的渲染图：桌板向前旋出，杯架里有咖啡，后排竖着手机">
+      <div class="canvas" id="canvas"></div>
+      <div class="status mono" id="status">正在加载 3D 模型…</div>
+      <div class="pick" id="pick" hidden></div>
+    </div>
+    <div class="controls">
+      <div class="ctl"><span class="lab">状态</span>
+        <div class="seg" role="group" aria-label="状态">
+          <button class="chip" data-state="use" aria-pressed="true">展开使用</button>
+          <button class="chip" data-state="book" aria-pressed="false">合成一本书</button>
+          <button class="chip" data-state="exploded" aria-pressed="false">爆炸图</button>
+        </div></div>
+      <div class="ctl"><label for="ang">桌板角度（定位点 0° / 180°）</label>
+        <div class="range"><input type="range" id="ang" min="0" max="180" step="1" value="180" list="angticks"><output id="angv" for="ang">180°</output></div>
+        <datalist id="angticks"><option value="0"></option><option value="90"></option><option value="180"></option></datalist></div>
+      <div class="ctl"><span class="lab">视角</span>
+        <div class="seg" role="group" aria-label="视角">
+          <button class="chip" data-view="hero">前侧</button><button class="chip" data-view="user">坐姿</button>
+          <button class="chip" data-view="wide">整箱</button><button class="chip" data-view="legs">侧板腿</button>
+          <button class="chip" data-view="tether">系留</button><button class="chip" data-view="pass">登机牌</button>
+        </div></div>
+      <div class="ctl"><span class="lab">显示</span>
+        <div class="seg">
+          <button class="chip" id="tCup" aria-pressed="true">杯架展开</button>
+          <button class="chip" id="tCtx" aria-pressed="true">行李箱</button>
+          <button class="chip" id="tProps" aria-pressed="true">杯子 / 手机 / 登机牌</button>
+        </div></div>
+    </div>
+    <p class="hint">拖动旋转、滚轮或双指缩放；点任意零件看材料和打印文件。</p>
+
+    <div class="specs">
+      <div class="spec"><span class="v">213×151×40<small>mm</small></span><span class="l">合起来的尺寸（A5 精装书）</span></div>
+      <div class="spec"><span class="v">≈500<small>g</small></span><span class="l">整套打印重量（估算）</span></div>
+      <div class="spec"><span class="v">≈13<small>cm</small></span><span class="l">桌面比箱顶高多少</span></div>
+      <div class="spec"><span class="v">13<small>种零件</small></span><span class="l">3 块打印板，PETG + TPU</span></div>
+      <div class="spec"><span class="v">0<small>颗螺丝</small></span><span class="l">卡扣、直销和带扣连接</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="block wrap" id="mechanics">
+  <div class="sign"><span class="arrow">→</span><h2>为什么从 v1.0 改成 v1.1</h2></div>
+  <p>v1.0 用一个 V 形夹座把整个台子悬挂在一根拉杆上。做完受力计算后，竖向打滑没问题，但悬臂产生的倾覆力矩只靠扎带张力扛，安全系数不够；而且台子偏在一侧，有人压桌时空箱会侧翻。v1.1 把重量改成直接压在箱顶：两块"封底"翻下来当桌腿，台子居中站在两根拉杆之间，扎带只负责系留。</p>
+  <div class="verdict">
+    <div class="vcard">
+      <h3>v1.0 单管夹 <span class="pill fail">不通过</span></h3>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>校核项</th><th>安全系数</th></tr></thead>
+        <tbody>
+          <tr><td>竖向打滑（扎带 20–40 N）</td><td class="n"><span class="sf ok">2.6 – 5.1</span></td></tr>
+          <tr><td>倾覆力矩，正常负载 2.7 N·m</td><td class="n"><span class="sf bad">1.0 – 2.0</span></td></tr>
+          <tr><td>倾覆力矩，手肘压桌边 5 kg</td><td class="n"><span class="sf bad">0.2 – 0.4</span></td></tr>
+          <tr><td>空箱侧翻（3 kg 箱，有人压桌）</td><td class="n"><span class="sf bad">0.54</span></td></tr>
+        </tbody></table></div>
+    </div>
+    <div class="vcard">
+      <h3>v1.1 站在箱顶 <span class="pill pass">通过</span></h3>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>校核项</th><th>安全系数</th></tr></thead>
+        <tbody>
+          <tr><td>侧板腿受压 / 屈曲（含压桌 5 kg）</td><td class="n"><span class="sf ok">93 / 65</span></td></tr>
+          <tr><td>桌板旋出 180° 前倾，系好带子</td><td class="n"><span class="sf ok">33.5</span></td></tr>
+          <tr><td>前倾，系好带子 + 压桌 5 kg</td><td class="n"><span class="sf mid">1.36</span></td></tr>
+          <tr><td>空箱侧翻（杯子偏心 45 mm）</td><td class="n"><span class="sf ok">19.4</span></td></tr>
+        </tbody></table></div>
+    </div>
+  </div>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 760 300" role="img" aria-label="受力路径侧视示意">
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--bad)"/></marker>
+            <marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--ok)"/></marker></defs>
+      <!-- v1.0 -->
+      <text x="20" y="26" fill="var(--ink-2)" font-family="var(--f-display)" font-size="18" font-weight="600">v1.0：悬臂挂在一根管上</text>
+      <rect x="60" y="40" width="10" height="230" fill="var(--line)"/>
+      <rect x="20" y="270" width="320" height="16" rx="4" fill="var(--line)"/>
+      <rect x="70" y="92" width="10" height="56" fill="var(--ink-2)"/>
+      <rect x="80" y="104" width="180" height="16" rx="3" fill="var(--ink-2)"/>
+      <line x1="200" y1="60" x2="200" y2="100" stroke="var(--bad)" stroke-width="3" marker-end="url(#ar)"/>
+      <text x="208" y="76" fill="var(--bad)" font-family="var(--f-mono)" font-size="13">负载</text>
+      <path d="M 92 80 A 40 40 0 0 1 130 92" fill="none" stroke="var(--bad)" stroke-width="2.5" marker-end="url(#ar)"/>
+      <text x="90" y="186" fill="var(--ink-2)" font-family="var(--f-body)" font-size="13">力矩只靠扎带摩擦 → 低头 / 打滑</text>
+      <!-- v1.1 -->
+      <text x="400" y="26" fill="var(--ink-2)" font-family="var(--f-display)" font-size="18" font-weight="600">v1.1：侧板把重量压到箱顶</text>
+      <rect x="430" y="40" width="10" height="230" fill="var(--line)"/>
+      <rect x="400" y="270" width="340" height="16" rx="4" fill="var(--line)"/>
+      <rect x="442" y="150" width="150" height="16" rx="3" fill="var(--ink-2)"/>
+      <rect x="592" y="150" width="120" height="8" rx="2" fill="var(--signal)"/>
+      <polygon points="446,166 458,166 462,270 450,270" fill="var(--ink)"/>
+      <polygon points="576,166 588,166 584,270 572,270" fill="var(--ink)"/>
+      <rect x="432" y="154" width="12" height="8" fill="none" stroke="var(--accent-ink)" stroke-width="2"/>
+      <line x1="520" y1="100" x2="520" y2="146" stroke="var(--ok)" stroke-width="3" marker-end="url(#ag)"/>
+      <text x="528" y="116" fill="var(--ok)" font-family="var(--f-mono)" font-size="13">负载</text>
+      <line x1="456" y1="200" x2="456" y2="262" stroke="var(--ok)" stroke-width="2.5" marker-end="url(#ag)"/>
+      <line x1="580" y1="200" x2="580" y2="262" stroke="var(--ok)" stroke-width="2.5" marker-end="url(#ag)"/>
+      <text x="600" y="214" fill="var(--ink-2)" font-family="var(--f-body)" font-size="13">两块侧板受压，</text>
+      <text x="600" y="232" fill="var(--ink-2)" font-family="var(--f-body)" font-size="13">外撇 5° 顶住限位自锁</text>
+      <text x="452" y="136" fill="var(--accent-ink)" font-family="var(--f-body)" font-size="13">系留带只防前倾、不承重</text>
+    </svg>
+    <figcaption>侧视示意，不按比例。灰色竖条是拉杆，底部是箱顶。</figcaption>
+  </figure>
+</section>
+
+<section class="block wrap" id="functions">
+  <div class="sign"><span class="arrow">→</span><h2>功能</h2></div>
+  <div class="feat">
+    <article class="f"><h3>侧板腿 · 纵向承力</h3><span class="dim">2 × 140×92×6 mm · 外撇 5° 自锁</span><p>合起来是书的封底，翻下来就是桌腿。直销铰链藏在主体侧边里，底面保持平整。底边中间拱起 16 mm，只有两端 TPU 脚垫着地，能跨过箱顶的筋和凸起。</p></article>
+    <article class="f"><h3>双管系留</h3><span class="dim">16 mm TPU 带 × 2 + 带扣 · 也可用 15 mm 魔术贴</span><p>带子从主体后壁的窗口穿过横杆，绕过拉杆管扣好。两根管各一根，左右对称。管距 150–280 mm 都能绑，不用测量。</p></article>
+    <article class="f"><h3>旋转桌板</h3><span class="dim">151×213 mm · 前中心销轴 · 0° / 180° 定位</span><p>合起来是封面；绕前沿正中的销轴向前转 180°，正好落在箱子中线上，根部压在主体前沿上受力。TPU 防滑面，四周 1.2 mm 挡边。</p></article>
+    <article class="f"><h3>伸缩杯架</h3><span class="dim">Ø86 → Ø61 三节套环 · 深约 75 mm</span><p>平时三节套环藏在主体里，把杯子按进去套环就落下。45° 锥面自定心，TPU 摩擦圈让套环停在任意位置。纸杯、罐装、瓶装都能放。</p></article>
+    <article class="f"><h3>登机牌夹层</h3><span class="dim">88 mm 宽 · 188 mm 深 · 2.2 mm 缝</span><p>藏在桌板内部的扁平插袋，从桌板侧面插入，只露出拇指缺口里的一截。两排 TPU 倒刺片"进得去、滑不出"，也能放身份证。</p></article>
+    <article class="f"><h3>手机竖立槽</h3><span class="dim">13 mm 槽宽 · 后仰 15° · 底部走线孔</span><p>在后排正中，屏幕朝向坐在箱子前面的人。槽底留了充电线孔，充电宝放旁边的格子里。</p></article>
+    <article class="f"><h3>收纳格</h3><span class="dim">大格 90×90 · 后排 2 格 · 前沿 2 格 · 杯架角落 4 格</span><p>护照、耳机、零钱、笔、证件都有地方放。合书后格子被封面盖住，东西不会掉出来；SIM 卡针孔也有。</p></article>
+    <article class="f"><h3>挂钩</h3><span class="dim">拉杆挂钩 ≤1.5 kg · 小双钩</span><p>买的免税袋挂在"拉杆挂钩"上，它直接绑在拉杆管上，重量进拉杆、不影响台子平衡。小双钩卡在桌下，挂耳机或证件挂绳。</p></article>
+  </div>
+</section>
+
+<section class="block wrap" id="gallery">
+  <div class="sign"><span class="arrow">→</span><h2>渲染图</h2></div>
+  <div class="gallery">
+    <figure><img src="img/hero.webp" alt="使用状态，前侧视角" loading="lazy"><figcaption>使用状态：桌板向前旋出，居中站在箱顶</figcaption></figure>
+    <figure><img src="img/seated.webp" alt="坐姿视角" loading="lazy"><figcaption>坐在箱子前面看到的样子</figcaption></figure>
+    <figure><img src="img/book.webp" alt="合书状态" loading="lazy"><figcaption>合起来就是一本 A5 书，登机牌留在夹层里</figcaption></figure>
+    <figure><img src="img/exploded.webp" alt="爆炸图" loading="lazy"><figcaption>爆炸图</figcaption></figure>
+    <figure><img src="img/legs.webp" alt="侧板腿与铰链" loading="lazy"><figcaption>侧板腿：拱形底边，只有两端脚垫着地</figcaption></figure>
+    <figure><img src="img/tether.webp" alt="双管系留" loading="lazy"><figcaption>两根系留带分别绕左右拉杆；拉杆挂钩绑在管上</figcaption></figure>
+    <figure><img src="img/pass.webp" alt="登机牌夹层" loading="lazy"><figcaption>登机牌从桌板侧面插入，只露拇指缺口</figcaption></figure>
+    <figure><img src="img/overview.webp" alt="整箱视角" loading="lazy"><figcaption>整箱视角：横把手完全空出，推拉不受影响</figcaption></figure>
+    <figure class="wide"><img src="img/rotation.webp" alt="桌板 0°、90°、180° 俯视" loading="lazy"><figcaption>桌板旋转（俯视）：0° 合起、90° 侧旋、180° 居中工作位</figcaption></figure>
+  </div>
+</section>
+
+<section class="block wrap" id="use">
+  <div class="sign"><span class="arrow">→</span><h2>怎么用</h2></div>
+  <div class="two">
+    <div style="display:grid;gap:10px;min-width:0"><h3>展开（约 20 秒）</h3>
+      <ol class="steps">
+        <li><div><b>拉杆拉到最高。</b>横把手离箱顶至少 25 cm，手握的地方和桌面之间留够空间。</div></li>
+        <li><div><b>翻下两块侧板，</b>翻到底会"咔"地顶住限位（外撇 5°）。把书放到箱顶，后沿贴着两根拉杆，左右居中。</div></li>
+        <li><div><b>系留：</b>每根带子从后壁窗口穿过横杆、绕过同侧拉杆，两端孔扣到带扣上，拉紧一格即可。</div></li>
+        <li><div><b>桌板向前转 180°</b>到定位点。按进杯子，竖起手机，登机牌插进桌板侧面的夹层。</div></li>
+      </ol></div>
+    <div style="display:grid;gap:10px;min-width:0"><h3>收起</h3>
+      <ol class="steps">
+        <li><div>取下手机和杯子，<b>从底下把杯架套环推回</b>主体里。</div></li>
+        <li><div>桌板转回 0°，盖住所有格子（可选磁铁会吸住）。</div></li>
+        <li><div>解开两根带子，<b>侧板向内翻平</b>，尖端的小凸点卡进主体底面。</div></li>
+        <li><div>带子、带扣、拉杆挂钩放进大格。合上就是一本书，放进箱子或拿在手上。</div></li>
+      </ol></div>
+  </div>
+  <div class="note"><b>使用限制：</b>桌面放 1 kg 以内的随手物品，不要倚靠或坐压；四轮直立推行时可以不收，倾斜拖行前先取下杯子。箱顶需大致平整（TPU 脚垫能吃掉 1–2 mm 的不平）。</div>
+</section>
+
+<section class="block wrap" id="print">
+  <div class="sign"><span class="arrow">→</span><h2>打印指南 · 拓竹 H3C</h2></div>
+  <p>所有零件都按免支撑设计，文件已摆好打印方向。每个带 TPU 的零件有一对 STL（<code>_PETG.stl</code> + <code>_TPU.stl</code>，坐标一致）：在 Bambu Studio 里同时导入，选"作为一个多零件对象加载"，再把 TPU 那一部分指定给 TPU 耗材。3MF 打印板里已经按对象摆好。</p>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>零件</th><th>数量</th><th>材料</th><th>打印姿态</th><th>估重</th></tr></thead>
+    <tbody>
+      <tr><td>01 收纳主体（书页）</td><td class="n">1</td><td>PETG + TPU 定位凸点</td><td>格子朝上，底面贴床</td><td class="n">178 g</td></tr>
+      <tr><td>02 旋转桌板（书封）</td><td class="n">1</td><td>PETG + TPU 防滑面 / 倒刺片</td><td>正面朝上</td><td class="n">181 g</td></tr>
+      <tr><td>03 / 04 左 / 右侧板腿</td><td class="n">1 + 1</td><td>PETG + TPU 脚垫</td><td>平放，铰链节朝上</td><td class="n">2 × 32 g</td></tr>
+      <tr><td>05 铰链销</td><td class="n">2</td><td>PETG</td><td>平放（底部自带削平）</td><td class="n">2 × 2 g</td></tr>
+      <tr><td>06–08 杯架套环 A / B / C</td><td class="n">各 1</td><td>PETG + TPU 摩擦圈</td><td>直立</td><td class="n">43 g</td></tr>
+      <tr><td>09 桌板销轴</td><td class="n">1</td><td>PETG</td><td>侧躺（开口面平行于床）</td><td class="n">2 g</td></tr>
+      <tr><td>10 小双钩 · 11 拉杆挂钩</td><td class="n">1 + 1</td><td>PETG（挂钩背面 TPU）</td><td>平放</td><td class="n">11 g</td></tr>
+      <tr><td>12 系留带 · 13 带扣</td><td class="n">2 + 2</td><td>TPU 95A · PETG</td><td>平放</td><td class="n">15 g</td></tr>
+    </tbody></table></div>
+  <div class="two">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>打印板</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td class="n">A</td><td>主体 + 桌板（最大 315×219 mm）</td></tr>
+        <tr><td class="n">B</td><td>两块侧板、铰链销、3 节套环、销轴、两个挂钩、带扣</td></tr>
+        <tr><td class="n">C</td><td>两根 TPU 系留带（单独用 TPU 打，速度放慢）</td></tr>
+      </tbody></table></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>参数</th><th>建议值</th></tr></thead>
+      <tbody>
+        <tr><td>层高 / 喷嘴</td><td class="n">0.20 mm / 0.4 mm</td></tr>
+        <tr><td>墙 / 顶底层</td><td class="n">3 墙（桌板、侧板 4 墙）/ 5 层</td></tr>
+        <tr><td>填充</td><td class="n">15% 螺旋体（侧板 25%）</td></tr>
+        <tr><td>支撑</td><td>不需要。桌板夹层有一段 88 mm 桥接，打开"加厚桥接"</td></tr>
+        <tr><td>耗材</td><td class="n">PETG ≈ 460 g · TPU 95A ≈ 40 g</td></tr>
+      </tbody></table></div>
+  </div>
+  <h3>组装（不用工具）</h3>
+  <ol class="steps">
+    <li><div><b>杯架：</b>从主体顶面依次放入套环 A、B、C，每节都会落在下一级的锥面座上。</div></li>
+    <li><div><b>桌板：</b>盖到主体上对齐前沿圆孔，销轴从桌板上面压进去，听到底下"咔"一声，倒钩就卡住了。要拆时从底下捏住两瓣往上推。</div></li>
+    <li><div><b>侧板：</b>把侧板的 4 个铰链节放进主体侧边的槽里（翻平状态），铰链销从后壁的沉孔插进去推到底，前端的小凸台会卡紧。另一侧同样。</div></li>
+    <li><div><b>可选：</b>主体后壁顶面和桌板底面各 2 个 Ø6×3 mm 磁铁孔，按相吸的极性压入，合书更紧。不装也能用。</div></li>
+  </ol>
+  <div class="note"><b>公差：</b>滑动配合按 0.35 mm 单边间隙设计。如果你的打印机偏紧或偏松，改 <code>cad/params.py</code> 里的 <code>CLR</code> 后重新导出即可；不要用缩放整件的办法。</div>
+</section>
+
+<section class="block wrap" id="calc">
+  <div class="sign"><span class="arrow">→</span><h2>v1.1 校核明细</h2></div>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>项目</th><th>工况</th><th>安全系数 / 结果</th></tr></thead>
+    <tbody>
+      <tr><td>侧板腿受压</td><td>全部负载 + 压桌 5 kg，单侧承担 70%，按层间强度 20 MPa</td><td class="n"><span class="sf ok">93</span></td></tr>
+      <tr><td>侧板腿屈曲</td><td>单根腿条 18×6 mm，长 62 mm，两端铰支</td><td class="n"><span class="sf ok">65</span></td></tr>
+      <tr><td>铰链销剪切</td><td>4 节 × 双剪，Ø3.5 PETG</td><td class="n"><span class="sf ok">≈33</span></td></tr>
+      <tr><td>前倾（桌板 180°）</td><td>不系带 / 系带 40 N / 系带 + 压桌 5 kg</td><td class="n"><span class="sf ok">2.65</span> / <span class="sf ok">33.5</span> / <span class="sf mid">1.36</span></td></tr>
+      <tr><td>台子侧翻</td><td>杯子偏离中线 45 mm</td><td class="n"><span class="sf ok">5.6</span></td></tr>
+      <tr><td>行李箱侧翻</td><td>空箱 3 kg，轮距半宽 160 mm</td><td class="n"><span class="sf ok">19.4</span></td></tr>
+      <tr><td>桌板销轴头剪切</td><td>正常 0.5 kg / 压桌 5 kg（支点在主体前沿，销在其后 12 mm）</td><td class="n"><span class="sf ok">54</span> / <span class="sf mid">2.3</span></td></tr>
+      <tr><td>桌板弯曲</td><td>正常 / 压桌 5 kg；正常负载挠度</td><td class="n"><span class="sf ok">140</span> / <span class="sf ok">5.4</span> · 0.03 mm</td></tr>
+      <tr><td>系留横杆弯曲</td><td>带子 2 × 40 N，竖向打印（按层间强度）</td><td class="n"><span class="sf ok">26</span></td></tr>
+      <tr><td>TPU 系留带抗拉</td><td>40 N，扣除孔后的净截面</td><td class="n"><span class="sf ok">17.6</span></td></tr>
+      <tr><td>拉杆挂钩防滑</td><td>1.5 kg 袋子，TPU 垫 + 带子摩擦</td><td class="n"><span class="sf ok">7.0</span></td></tr>
+    </tbody></table></div>
+  <p class="hint">假设：PETG 打印件层内 38 MPa、层间 20 MPa、剪切 20 MPa、E = 1800 MPa；TPU 95A 抗拉 25 MPa；TPU 对铝管摩擦系数 0.6，魔术贴 0.3；负载为台子 0.48 kg、咖啡 0.55 kg、手机 0.22 kg、桌面物品 0.5 kg、挂袋 1.5 kg，"压桌"按 5 kg 压在桌板最外沿。都是手算的保守估计，第一次打印后请按"使用限制"实测一次。计算脚本在 <code>cad/mech.py</code>。</p>
+</section>
+
+<section class="block wrap" id="files">
+  <div class="sign"><span class="arrow">→</span><h2>文件与版本</h2></div>
+  <div class="two">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>文件夹</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><code>print/</code></td><td>13 种零件的 STL（PETG / TPU 分开）+ 3 块 3MF 打印板</td></tr>
+        <tr><td><code>step/</code></td><td>每个零件的 STEP + 整机装配 STEP，可在 Fusion / SolidWorks 里改</td></tr>
+        <tr><td><code>renders/</code></td><td>9 张产品渲染图（2400 px）</td></tr>
+        <tr><td><code>cad/</code></td><td>CadQuery 参数化源码、装配干涉检查、受力计算</td></tr>
+        <tr><td><code>versions/v1.0/</code></td><td>单管夹版本，保留备查（已被 v1.1 取代）</td></tr>
+      </tbody></table></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>版本</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td class="n">v1.1</td><td>站立式：侧板腿承力、双管系留、桌板居中旋出。当前版本。</td></tr>
+        <tr><td class="n">v1.0</td><td>单管 V 形夹座悬挂式。力矩校核不通过，已停用。</td></tr>
+      </tbody></table></div>
+  </div>
+</section>
+</main>
+
+<footer class="wrap">GateBook 候机书 v1.1 · 尺寸单位 mm · 3D 预览里的行李箱、杯子和手机只是参照物，不需要打印。</footer>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+// GateBook 3D viewer core (three.js r160, ES modules)
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const PART_LABELS = {
+  base: '收纳主体（书页）', table: '旋转桌板（书封）', panel_l: '左侧板腿（封底·左）', panel_r: '右侧板腿（封底·右）',
+  hinge_pin: '铰链销（直销，无螺纹）', ring2: '杯架套环 A', ring3: '杯架套环 B', ring4: '杯架底环 C',
+  pin: '桌板销轴（卡扣式）', hook_mini: '小双钩', tube_hook: '拉杆挂钩', strap: 'TPU 系留带', buckle: '带扣',
+};
+
+const PALETTE = {
+  paper: 0xe4e1da, graphite: 0x2b2e34, signal: 0xe3a100,
+  alu: 0xb9bec6, shell: 0x5d6873, rubber: 0x1d1f22, band: 0x30343a,
+};
+const PART_COLOR = {
+  base: 'paper', table: 'graphite', panel_l: 'graphite', panel_r: 'graphite', hinge_pin: 'graphite',
+  ring2: 'paper', ring3: 'paper', ring4: 'paper', pin: 'graphite', hook_mini: 'graphite', tube_hook: 'graphite', buckle: 'graphite',
+};
+
+function mat4(rows) {
+  const m = new THREE.Matrix4();
+  m.set(...rows[0], ...rows[1], ...rows[2], ...rows[3]);
+  return m;
+}
+function rzAbout(deg, cx, cy) {
+  const a = THREE.MathUtils.degToRad(deg);
+  const t1 = new THREE.Matrix4().makeTranslation(cx, cy, 0);
+  const r = new THREE.Matrix4().makeRotationZ(a);
+  const t2 = new THREE.Matrix4().makeTranslation(-cx, -cy, 0);
+  return t1.multiply(r).multiply(t2);
+}
+
+async function createViewer(container, opts) {
+  const { glbUrl, statesUrl, preserve = false } = opts;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: preserve });
+  renderer.setPixelRatio(opts.pixelRatio || Math.min(window.devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.92;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+
+  const camera = new THREE.PerspectiveCamera(30, 1, 5, 20000);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+
+  // CAD frame is Z-up, millimetres
+  const root = new THREE.Group();
+  root.rotation.x = -Math.PI / 2;
+  scene.add(root);
+
+  const key = new THREE.DirectionalLight(0xffffff, 1.6);
+  key.position.set(-500, 900, 700);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  Object.assign(key.shadow.camera, { left: -500, right: 500, top: 500, bottom: -500, near: 10, far: 3000 });
+  key.shadow.bias = -0.0004;
+  key.shadow.radius = 4;
+  scene.add(key);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f99, 0.35));
+
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(8000, 8000), new THREE.ShadowMaterial({ opacity: 0.18 }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  const [gltf, states] = await Promise.all([
+    new GLTFLoader().loadAsync(glbUrl),
+    fetch(statesUrl).then(r => r.json()),
+  ]);
+
+  const mats = {
+    paper: new THREE.MeshPhysicalMaterial({ color: PALETTE.paper, roughness: 0.5, clearcoat: 0.15, clearcoatRoughness: 0.6 }),
+    graphite: new THREE.MeshPhysicalMaterial({ color: PALETTE.graphite, roughness: 0.42, clearcoat: 0.25, clearcoatRoughness: 0.5 }),
+    signal: new THREE.MeshStandardMaterial({ color: PALETTE.signal, roughness: 0.8 }),
+    alu: new THREE.MeshStandardMaterial({ color: PALETTE.alu, metalness: 0.85, roughness: 0.32 }),
+    shell: new THREE.MeshPhysicalMaterial({ color: PALETTE.shell, roughness: 0.28, clearcoat: 0.6 }),
+    rubber: new THREE.MeshStandardMaterial({ color: PALETTE.rubber, roughness: 0.9 }),
+    band: new THREE.MeshStandardMaterial({ color: PALETTE.band, roughness: 0.95 }),
+  };
+  const ctxMat = { tube: mats.alu, grip: mats.rubber, suitcase: mats.shell, bands: mats.band };
+
+  // geometry by name
+  const geoms = {};
+  gltf.scene.traverse(o => { if (o.isMesh) geoms[o.name] = o.geometry; });
+  for (const g of Object.values(geoms)) g.computeVertexNormals();
+
+  const parts = {};      // name -> { instances: [Group], meshes }
+  const partNames = Object.keys(PART_LABELS);
+  const maxInst = n => Math.max(...['use', 'book', 'exploded'].map(s => (states[s][n] || []).length), 1);
+  for (const n of partNames) {
+    const inst = [];
+    for (let i = 0; i < maxInst(n); i++) {
+      const grp = new THREE.Group();
+      grp.matrixAutoUpdate = true;
+      grp.userData.part = n;
+      for (const matName of ['petg', 'tpu']) {
+        const g = geoms[`${n}__${matName}`];
+        if (!g) continue;
+        const m = new THREE.Mesh(g, matName === 'tpu' ? mats.signal : mats[PART_COLOR[n]]);
+        m.castShadow = true; m.receiveShadow = true;
+        m.userData.part = n;
+        grp.add(m);
+      }
+      root.add(grp);
+      inst.push(grp);
+    }
+    parts[n] = { instances: inst };
+  }
+  const ctx = new THREE.Group();
+  root.add(ctx);
+  for (const k of ['tube', 'grip', 'suitcase', 'bands']) {
+    if (!geoms[`ctx__${k}`]) continue;
+    const m = new THREE.Mesh(geoms[`ctx__${k}`], ctxMat[k]);
+    m.castShadow = k !== 'suitcase'; m.receiveShadow = true;
+    if (k === 'bands') m.userData.mountOnly = true;
+    ctx.add(m);
+  }
+
+  // ---------- props: coffee cup, phone, boarding pass ----------
+  const props = new THREE.Group();
+  root.add(props);
+  const meta = states.meta;
+  {
+    const cupMat = new THREE.MeshStandardMaterial({ color: 0xf4f1ec, roughness: 0.7 });
+    const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x7a5a43, roughness: 0.9 });
+    const lidMat = new THREE.MeshStandardMaterial({ color: 0xf8f8f6, roughness: 0.4 });
+    const h = 112;
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(45, 30, h, 48, 1, true), cupMat);
+    cup.rotation.x = Math.PI / 2;
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(42.6, 37.2, 45, 48, 1, true), sleeveMat);
+    sleeve.rotation.x = Math.PI / 2; sleeve.position.z = 8;
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(46.5, 46.5, 7, 48), lidMat);
+    lid.rotation.x = Math.PI / 2; lid.position.z = h / 2 + 3;
+    const bottom = new THREE.Mesh(new THREE.CircleGeometry(30, 32), cupMat);
+    bottom.position.z = -h / 2; bottom.rotation.x = Math.PI;
+    const c = new THREE.Group(); c.add(cup, sleeve, lid, bottom);
+    // a 90/60 mm tapered paper cup comes to rest on the top rim of ring C (ID 61.1 mm)
+    c.position.set(meta.cup[0], meta.cup[1], -30.5 + h / 2);
+    c.traverse(o => { if (o.isMesh) { o.castShadow = true; o.material.side = THREE.DoubleSide; } });
+    c.userData.prop = 'cup';
+    props.add(c);
+
+    const phoneMat = new THREE.MeshPhysicalMaterial({ color: 0x15171b, roughness: 0.25, clearcoat: 1 });
+    const screenMat = new THREE.MeshStandardMaterial({ color: 0x23466b, roughness: 0.15, emissive: 0x0d2238, emissiveIntensity: 0.6 });
+    const phone = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(8.5, 74, 152), phoneMat);
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(146, 70), screenMat);
+    scr.rotation.y = Math.PI / 2; scr.position.x = 4.3;
+    const bump = new THREE.Mesh(new THREE.BoxGeometry(2, 26, 26), phoneMat);
+    bump.position.set(-5, 18, 52);
+    phone.add(body, scr, bump);
+    const lean = THREE.MathUtils.degToRad(15);
+    phone.rotation.y = -lean;
+    phone.position.set(23.9 - 76 * Math.sin(lean), 105, 6.6 + 76 * Math.cos(lean));
+    phone.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    phone.userData.prop = 'phone';
+    props.add(phone);
+  }
+  // boarding pass: child of the table instance so it swings with it
+  const passTex = (() => {
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 412;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#fbfaf7'; g.fillRect(0, 0, 1024, 412);
+    g.fillStyle = '#1f6fb2'; g.fillRect(0, 0, 1024, 70);
+    g.fillStyle = '#fff'; g.font = 'bold 40px sans-serif'; g.fillText('BOARDING PASS  登机牌', 30, 50);
+    g.fillStyle = '#222'; g.font = 'bold 64px monospace'; g.fillText('SIN → PVG', 30, 170);
+    g.font = '36px monospace'; g.fillText('GATE B7   SEAT 32A   08:45', 30, 240);
+    for (let i = 0; i < 60; i++) { g.fillRect(760 + i * 4, 290, (i % 3) + 1, 90); }
+    g.fillStyle = '#1f6fb2'; g.fillRect(720, 70, 6, 342);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  const pass = new THREE.Mesh(new THREE.BoxGeometry(203, 82, 0.3),
+    [0, 0, 0, 0, 1, 1].map(i => i ? new THREE.MeshStandardMaterial({ map: passTex, roughness: 0.6 }) : new THREE.MeshStandardMaterial({ color: 0xf6f5f2 })));
+  // sleeve: X 24..211.5, Y 30..118, z 26.4..28.6 ; pass pushed in, 10 mm proud
+  pass.rotation.z = Math.PI / 2;
+  pass.position.set(74, 24.5 + 101.5 + 1, 27.4);
+  pass.userData.prop = 'pass';
+  parts.table.instances[0].add(pass);
+
+  // ---------- state handling ----------
+  const cur = {};   // part -> [ {p,q,s,visible} ]
+  let target = null, from = null, t0 = 0, dur = 0;
+  let tableDeg = 180, cupExtended = true, stateName = 'use';
+
+  function decompose(m) {
+    const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+    m.decompose(p, q, s); return { p, q, s };
+  }
+  function stateMatrices(name) {
+    const st = states[name];
+    const out = {};
+    for (const n of partNames) {
+      const list = (st[n] || []).map(mat4);
+      out[n] = list;
+    }
+    if (name === 'use') {
+      out.table = [rzAbout(tableDeg, meta.pivot[0], meta.pivot[1])];
+      if (!cupExtended) for (const k of ['ring2', 'ring3', 'ring4']) out[k] = states.book[k].map(mat4);
+    }
+    return out;
+  }
+  function snapshot() {
+    const s = {};
+    for (const n of partNames) s[n] = parts[n].instances.map(g => ({ p: g.position.clone(), q: g.quaternion.clone(), v: g.visible }));
+    return s;
+  }
+  function goal(name) {
+    const M = stateMatrices(name);
+    const g = {};
+    for (const n of partNames) {
+      g[n] = parts[n].instances.map((grp, i) => {
+        const m = M[n][i];
+        if (!m) return { hidden: true, p: grp.position.clone(), q: grp.quaternion.clone() };
+        const d = decompose(m); return { p: d.p, q: d.q, hidden: false };
+      });
+    }
+    return g;
+  }
+  function applyGoal(g) {
+    for (const n of partNames) parts[n].instances.forEach((grp, i) => {
+      const x = g[n][i]; grp.position.copy(x.p); grp.quaternion.copy(x.q); grp.visible = !x.hidden;
+    });
+  }
+  const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+  function setState(name, animate = true) {
+    stateName = name;
+    const g = goal(name);
+    ctx.visible = showContext && name === 'use';
+    props.visible = showProps && name === 'use' && cupExtended;
+    pass.visible = showProps && name !== 'exploded';
+    if (!animate) { applyGoal(g); target = null; return; }
+    from = snapshot(); target = g; t0 = performance.now(); dur = animMs;
+    for (const n of partNames) parts[n].instances.forEach((grp, i) => { if (!g[n][i].hidden) grp.visible = true; });
+  }
+  let showContext = true, showProps = true, animMs = 900;
+
+  function step(now) {
+    if (!target) return;
+    const t = Math.min(1, (now - t0) / dur), e = ease(t);
+    for (const n of partNames) parts[n].instances.forEach((grp, i) => {
+      const a = from[n][i], b = target[n][i];
+      grp.position.lerpVectors(a.p, b.p, e);
+      grp.quaternion.slerpQuaternions(a.q, b.q, e);
+      if (t >= 1) grp.visible = !b.hidden;
+    });
+    if (t >= 1) target = null;
+  }
+
+  // ---------- camera ----------
+  const tmpBox = new THREE.Box3();
+  function frame(view = 'hero', instant = false) {
+    const V = {
+      hero: { pos: [760, 560, 330], tgt: [95, 95, -70] },
+      user: { pos: [720, 105, 230], tgt: [70, 105, -10] },
+      wide: { pos: [1150, 900, 520], tgt: [80, 100, -250] },
+      book: { pos: [430, 360, 330], tgt: [74, 105, 8] },
+      exploded: { pos: [560, 520, 380], tgt: [40, 105, -30] },
+      legs: { pos: [150, -420, -40], tgt: [74, 20, -45] },
+      tether: { pos: [-330, -150, 260], tgt: [-5, 30, 5] },
+      pass: { pos: [420, -230, 230], tgt: [200, 10, 25] },
+      top: { pos: [140, 105, 900], tgt: [140, 105, 0] },
+    }[view];
+    const toW = v => new THREE.Vector3(v[0], v[2], -v[1]);
+    const p = toW(V.pos), t = toW(V.tgt);
+    if (instant) { camera.position.copy(p); controls.target.copy(t); controls.update(); return; }
+    if (animMs < 50) { camera.position.copy(p); controls.target.copy(t); controls.update(); return; }
+    camAnim = { p0: camera.position.clone(), p1: p, t0v: controls.target.clone(), t1: t, s: performance.now() };
+  }
+  let camAnim = null;
+  function camStep(now) {
+    if (!camAnim) return;
+    const t = Math.min(1, (now - camAnim.s) / 900), e = ease(t);
+    camera.position.lerpVectors(camAnim.p0, camAnim.p1, e);
+    controls.target.lerpVectors(camAnim.t0v, camAnim.t1, e);
+    if (t >= 1) camAnim = null;
+  }
+
+  function placeGround() {
+    // ground under the suitcase (use state) or under the book
+    ground.position.y = stateName === 'use' ? (showContext ? meta.z_top - 550 : meta.z_top - 0.2) : (stateName === 'exploded' ? -150 : -6.5);
+    key.target.position.set(0, ground.position.y, 0);
+  }
+
+  function resize() {
+    const w = container.clientWidth, h = container.clientHeight;
+    renderer.setSize(w, h, false);
+    renderer.domElement.style.width = '100%'; renderer.domElement.style.height = '100%';
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(container);
+  resize();
+
+  // picking
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  let onPick = null, highlighted = null;
+  renderer.domElement.addEventListener('pointerup', ev => {
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    const r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hits = ray.intersectObjects(Object.values(parts).flatMap(p => p.instances), true).filter(h => h.object.visible);
+    const part = hits.length ? hits[0].object.userData.part : null;
+    highlight(part);
+    onPick && onPick(part);
+  });
+  function highlight(part) {
+    highlighted = part;
+    for (const n of partNames) for (const g of parts[n].instances) g.traverse(o => {
+      if (o.isMesh && o.userData.part) {
+        if (!o.userData.baseMat) o.userData.baseMat = o.material;
+        if (part && n === part) {
+          const m = o.userData.baseMat.clone(); m.emissive = new THREE.Color(0xf2c200); m.emissiveIntensity = 0.25; o.material = m;
+        } else o.material = o.userData.baseMat;
+      }
+    });
+  }
+
+  let running = true;
+  function loop(now) {
+    if (!running) return;
+    step(now); camStep(now); placeGround(); controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+  setState('use', false);
+  frame('hero', true);
+  requestAnimationFrame(loop);
+
+  return {
+    THREE, renderer, scene, camera, controls,
+    setState, frame, highlight,
+    setTableAngle(d, animate = true) { tableDeg = d; if (stateName === 'use') setState('use', animate); },
+    setCup(ext) { cupExtended = ext; if (stateName === 'use') setState('use', true); },
+    setDuration(ms) { animMs = ms; },
+    setContext(v) { showContext = v; ctx.visible = v && stateName === 'use'; },
+    setProps(v) { showProps = v; props.visible = v && stateName === 'use' && cupExtended; pass.visible = v && stateName !== 'exploded'; },
+    onPick(fn) { onPick = fn; },
+    get state() { return stateName; },
+    renderOnce() { step(performance.now() + 1e6); placeGround(); controls.update(); renderer.render(scene, camera); },
+    setCameraRaw(pos, tgt) { const toW = v => new THREE.Vector3(v[0], v[2], -v[1]); camera.position.copy(toW(pos)); controls.target.copy(toW(tgt)); controls.update(); },
+  };
+}
+
+
+const INFO = {
+  base: ['收纳主体（书页）', 'PETG + TPU 定位凸点', '01_base_收纳主体', '148×210×24 mm。杯架井、手机槽、收纳格、系留横杆和侧板铰链都在这一件上。'],
+  table: ['旋转桌板（书封）', 'PETG + TPU 防滑面', '02_table_旋转桌板', '151×213×9 mm。内部有登机牌夹层，绕前中心销轴旋转，0°/180° 定位。'],
+  panel_l: ['左侧板腿', 'PETG + TPU 脚垫', '03_panel_L_左侧板腿', '翻下外撇 5° 顶住限位，受压自锁；合起时是半块封底。'],
+  panel_r: ['右侧板腿', 'PETG + TPU 脚垫', '04_panel_R_右侧板腿', '与左侧镜像。'],
+  hinge_pin: ['铰链销', 'PETG', '05_hinge_pin_铰链销', 'Ø3.5 直销，从后壁插入，前端小凸台卡紧。没有螺纹。'],
+  ring2: ['杯架套环 A', 'PETG + TPU 摩擦圈', '06_cup_ring_A_杯架套环A', '外径 85 mm，落在主体的 45° 锥面座上。'],
+  ring3: ['杯架套环 B', 'PETG + TPU 摩擦圈', '07_cup_ring_B_杯架套环B', '外径 77 mm。'],
+  ring4: ['杯架底环 C', 'PETG + TPU 摩擦圈', '08_cup_ring_C_杯架底环C', '内径 61 mm，带漏水孔的底。'],
+  pin: ['桌板销轴', 'PETG', '09_pivot_pin_桌板销轴', '从上往下压入，两瓣倒钩卡在主体底部的台阶上。'],
+  hook_mini: ['小双钩', 'PETG', '10_hook_mini_小双钩', '卡口转 90° 锁在桌下，挂耳机、挂绳。'],
+  tube_hook: ['拉杆挂钩', 'PETG + TPU 背垫', '11_tube_hook_拉杆挂钩', '用系留带绑在拉杆管上，挂 1.5 kg 以内的袋子。'],
+  strap: ['TPU 系留带', 'TPU 95A', '12_strap_TPU系留带', '16×1.8×180 mm，两端各一排调节孔。'],
+  buckle: ['带扣', 'PETG', '13_buckle_带扣', '两个蘑菇头扣钉，带子张力让扣钉受剪，不会脱出。'],
+};
+const stage = document.getElementById('stage');
+const statusEl = document.getElementById('status');
+const pick = document.getElementById('pick');
+const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const VIEW_FOR_STATE = { use: 'hero', book: 'book', exploded: 'exploded' };
+try {
+  const v = await createViewer(document.getElementById('canvas'), { glbUrl: 'gatebook.gltf.json', statesUrl: 'states.json' });
+  if (reduce) v.setDuration(0);
+  stage.classList.add('live');
+  statusEl.textContent = '展开使用 · 桌板 180°';
+  const setPressed = (sel, el) => document.querySelectorAll(sel).forEach(b => b.setAttribute('aria-pressed', String(b === el)));
+  document.querySelectorAll('[data-state]').forEach(b => b.addEventListener('click', () => {
+    const s = b.dataset.state;
+    setPressed('[data-state]', b);
+    v.setState(s, true); v.frame(VIEW_FOR_STATE[s]);
+    statusEl.textContent = { use: '展开使用', book: '合成一本书 · 213×151×40 mm', exploded: '爆炸图 · 13 种零件' }[s];
+  }));
+  document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
+    if (v.state !== 'use') { setPressed('[data-state]', document.querySelector('[data-state="use"]')); v.setState('use', true); }
+    v.frame(b.dataset.view);
+  }));
+  const ang = document.getElementById('ang'), angv = document.getElementById('angv');
+  ang.addEventListener('input', () => {
+    let d = Number(ang.value);
+    for (const s of [0, 90, 180]) if (Math.abs(d - s) <= 4) d = s;
+    angv.value = d + '°';
+    if (v.state !== 'use') { setPressed('[data-state]', document.querySelector('[data-state="use"]')); v.setState('use', false); }
+    v.setTableAngle(d, false);
+    statusEl.textContent = '展开使用 · 桌板 ' + d + '°' + (d === 180 ? '（居中工作位）' : d === 0 ? '（合起）' : '');
+  });
+  const tog = (id, fn) => { const b = document.getElementById(id); b.addEventListener('click', () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', String(on)); fn(on); }); };
+  tog('tCup', on => v.setCup(on));
+  tog('tCtx', on => v.setContext(on));
+  tog('tProps', on => v.setProps(on));
+  v.onPick(part => {
+    if (!part) { pick.hidden = true; return; }
+    const [n, m, f, d] = INFO[part];
+    pick.innerHTML = `<h4>${n}</h4><div><span class="k">材料</span> ${m}</div><div><span class="k">文件</span> <span class="mono">${f}_*.stl</span></div><div style="margin-top:4px">${d}</div>`;
+    pick.hidden = false;
+  });
+} catch (e) {
+  statusEl.textContent = '3D 预览无法在这个浏览器里加载，下面的渲染图是同一个模型。';
+  console.error(e);
+}
+</script>

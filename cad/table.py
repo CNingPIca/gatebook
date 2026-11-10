@@ -1,4 +1,5 @@
-"""Swivel table ("hard cover"). Same XY frame as the base; sits on Z = BASE_H.
+"""Swivel table ("hard cover") v1.1. Same XY frame as the base; sits on Z = BASE_H.
+Pivot at the front centre: swings 180 deg forward on the luggage centre line.
 Printed right side up (underside on the bed)."""
 import math
 import cadquery as cq
@@ -10,9 +11,8 @@ ZT = BASE_H + TBL_H
 X0, Y0 = -TBL_OVER, -TBL_OVER
 X1, Y1 = BASE_L + TBL_OVER, BASE_W + TBL_OVER
 
-# dimples on the table underside (the TPU nub lives in the base)
-DIMPLE_ANGLES = {0: (135, 45, 315), 1: (225, 315, 45)}
-NUB_ANGLES = {0: 135, 1: 225}
+# detent dimples on the underside at 0 and 180 deg (the TPU nub lives in the base)
+DIMPLES = [(PIVOT[0] - DETENT_R, PIVOT[1]), (PIVOT[0] + DETENT_R, PIVOT[1])]
 
 
 def build():
@@ -26,64 +26,55 @@ def build():
     lip = lip_o.cut(lip_i).faces(">Z").edges().fillet(0.5)
     body = body.union(lip)
 
-    # ---- boarding-pass sleeve (open at the far end, X = X1) ----
+    # ---- boarding-pass sleeve: runs along Y, open at the right edge (Y = Y1) ----
     zs0 = Z0 + PASS_Z0
-    sleeve = rbox(PASS_X0, PASS_Y[0], X1 + 5, PASS_Y[1], zs0, zs0 + PASS_GAP, 3.0)
-    body = body.cut(sleeve)
-    # entrance flare
-    flare = (cq.Workplane("YZ").workplane(offset=X1 - 4)
-             .rect(PASS_Y[1] - PASS_Y[0], PASS_GAP).workplane(offset=4.5)
-             .rect(PASS_Y[1] - PASS_Y[0] + 2, PASS_GAP + 2.0).loft()
-             .translate((0, (PASS_Y[0] + PASS_Y[1]) / 2, zs0 + PASS_GAP / 2)))
+    xc = (PASS_X[0] + PASS_X[1]) / 2
+    body = body.cut(rbox(PASS_X[0], PASS_Y0, PASS_X[1], Y1 + 5, zs0, zs0 + PASS_GAP, 3.0))
+    flare = (cq.Workplane("XZ").workplane(offset=-(Y1 - 4))
+             .rect(PASS_X[1] - PASS_X[0], PASS_GAP).workplane(offset=-4.5)
+             .rect(PASS_X[1] - PASS_X[0] + 2, PASS_GAP + 2.0).loft()
+             .translate((xc, 0, zs0 + PASS_GAP / 2)))
     body = body.cut(flare)
-    # thumb notch: exposes the last 14 mm of the pass so it can be pinched
-    notch = cyl(X1, (PASS_Y[0] + PASS_Y[1]) / 2, zs0 + PASS_GAP - 0.01, TBL_H + 5, 2 * PASS_NOTCH_R)
-    body = body.cut(notch)
+    # thumb notch: exposes the end of the pass so it can be pinched
+    body = body.cut(cyl(xc, Y1, zs0 + PASS_GAP - 0.01, TBL_H + 5, 2 * PASS_NOTCH_R))
 
-    # TPU retention fins on the sleeve floor (lean towards the inside: easy in, hard out)
+    # TPU retention fins on the sleeve floor, leaning inwards (-Y): easy in, hard out
     tpu = None
     fin_h = PASS_GAP - 0.2
     lean = math.radians(35)
-    for fx in (95.0, 165.0):
-        prof = [(fx, zs0 - 0.6), (fx + 1.0, zs0 - 0.6), (fx + 1.0 - fin_h * math.tan(lean), zs0 + fin_h),
-                (fx - fin_h * math.tan(lean), zs0 + fin_h)]
-        fin = (cq.Workplane("XZ").polyline(prof).close().extrude(-(PASS_Y[1] - PASS_Y[0] - 16))
-               .translate((0, PASS_Y[0] + 8, 0)))
+    for fy in (90.0, 160.0):
+        prof = [(fy, zs0 - 0.6), (fy + 1.0, zs0 - 0.6), (fy + 1.0 - fin_h * math.tan(lean), zs0 + fin_h),
+                (fy - fin_h * math.tan(lean), zs0 + fin_h)]
+        fin = (cq.Workplane("YZ").workplane(offset=PASS_X[0] + 8).polyline(prof).close()
+               .extrude(PASS_X[1] - PASS_X[0] - 16))
         tpu = fin if tpu is None else tpu.union(fin)
 
-    # ---- pivot holes + head counterbores ----
-    for (px, py) in PIVOTS:
-        body = body.cut(cyl(px, py, Z0 - 1, TBL_H + 5, PIN_BORE))
-        body = body.cut(cyl(px, py, ZT - 2.2, 5, 16.4))
+    # ---- pivot hole + head counterbore ----
+    px, py = PIVOT
+    body = body.cut(cyl(px, py, Z0 - 1, TBL_H + 5, PIN_BORE))
+    body = body.cut(cyl(px, py, ZT - 2.2, 5, 16.4))
 
-    # ---- detent dimples on the underside ----
-    for i, (px, py) in enumerate(PIVOTS):
-        for a in DIMPLE_ANGLES[i]:
-            x = px + DETENT_R * math.cos(math.radians(a))
-            y = py + DETENT_R * math.sin(math.radians(a))
-            sph = cq.Workplane("XY").add(cq.Solid.makeSphere(DIMPLE_D / 2, cq.Vector(x, y, Z0 - DIMPLE_D / 2 + DIMPLE_DEPTH)))
-            body = body.cut(sph)
+    for (x, y) in DIMPLES:
+        body = body.cut(cq.Workplane("XY").add(cq.Solid.makeSphere(DIMPLE_D / 2, cq.Vector(x, y, Z0 - DIMPLE_D / 2 + DIMPLE_DEPTH))))
 
-    # ---- optional magnets (free end of the cover) ----
+    # ---- optional magnets (free/back edge of the cover) ----
     for (mx, my) in MAGNETS:
         body = body.cut(cyl(mx, my, Z0 - 1, MAG_H + 1, MAG_D))
 
-    # ---- TPU anti-slip inlay with PETG lettering ----
-    inl = rbox(9.0, 9.0, 176.0, BASE_W - 9.0, ZT - TPU_INLAY, ZT + 0.01, 8.0)
-    title = (cq.Workplane("XY").workplane(offset=ZT - TPU_INLAY)
-             .center(92.5, 86.0).text("GATEBOOK", 15, TPU_INLAY + 0.01, font="Inter", kind="bold", halign="center", valign="center"))
-    sub = (cq.Workplane("XY").workplane(offset=ZT - TPU_INLAY)
-           .center(92.5, 62.0).text("候 机 书", 11, TPU_INLAY + 0.01, font="Noto Serif CJK SC", halign="center", valign="center"))
-    rule = rbox(62.0, 73.4, 123.0, 74.6, ZT - TPU_INLAY, ZT + 0.01, 0.5)
-    letters = title.union(sub).union(rule)
+    # ---- TPU anti-slip inlay with PETG lettering (reads from the front of the luggage) ----
+    inl = rbox(9.0, 9.0, 124.0, 195.0, ZT - TPU_INLAY, ZT + 0.01, 8.0)
+
+    def label(txt, x, y, size, font, kind="regular"):
+        pl = cq.Plane(origin=(x, y, ZT - TPU_INLAY), xDir=(0, 1, 0), normal=(0, 0, 1))
+        return cq.Workplane(pl).text(txt, size, TPU_INLAY + 0.01, font=font, kind=kind, halign="center", valign="center")
+
+    letters = (label("GATEBOOK", 52.0, 102.0, 15, "Inter", "bold")
+               .union(label("候 机 书", 76.0, 102.0, 11, "Noto Serif CJK SC"))
+               .union(rbox(63.4, 72.0, 64.6, 132.0, ZT - TPU_INLAY, ZT + 0.01, 0.5))
+               .union(label("BOARDING PASS  >>", 104.0, 160.0, 4.2, "Inter", "bold")))
     inlay = inl.cut(letters)
     body = body.cut(inl).union(letters.intersect(inl))
     tpu = tpu.union(inlay)
-
-    # ---- small labels ----
-    lab = (cq.Workplane(cq.Plane(origin=(190.5, 74.0, ZT), xDir=(0, 1, 0), normal=(0, 0, 1)))
-           .text("BOARDING PASS", 4.2, -0.4, font="Inter", kind="bold", halign="center", valign="center"))
-    body = body.cut(lab)
 
     body = body.cut(tpu)
     return {"petg": body, "tpu": tpu}
