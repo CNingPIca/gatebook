@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8">
+<style>html,body{margin:0;height:100%;background:transparent}#v{width:100%;height:100%}</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head><body><div id="v"></div>
+<script type="module">
+import { createViewer } from './gb-viewer.js';
+window.viewer = await createViewer(document.getElementById('v'), { glbUrl: './data/gatebook.glb', statesUrl: './data/states.json', preserve: true, pixelRatio: 1 });
+window.ready = true;
+</script></body></html>
